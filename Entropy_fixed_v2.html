@@ -1,0 +1,1911 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AETHEL OS — 戀人存檔 / 熵之裂縫</title>
+
+  <style>
+    /* ==========================================
+       AETHEL OS — UI THEME / TOKENS
+       ========================================== */
+    :root{
+      --neon-blue:#00f2ff;
+      --glitch-red:#ff3e3e;
+      --terminal-green:#00ff41;
+      --bg-blur:rgba(10,10,10,.72);
+      --panel:rgba(18,18,20,.62);
+      --panel-strong:rgba(18,18,20,.82);
+      --line:rgba(255,255,255,.10);
+      --text:#e9eef2;
+      --muted:rgba(233,238,242,.72);
+      --shadow:0 20px 60px rgba(0,0,0,.45);
+      --r:18px;
+      --mono:"Courier New", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "微軟正黑體";
+      --ui:system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Heiti TC", Arial, sans-serif;
+    }
+
+    /* ==========================================
+       GLOBAL / BACKDROP
+       ========================================== */
+    html, body { height: 100%; }
+    body{
+      margin:0;
+      background:#000;
+      color:var(--text);
+      overflow:hidden;
+      font-family:var(--mono);
+      letter-spacing:.2px;
+      user-select:none;
+    }
+
+    #vfx-canvas{
+      position:fixed; inset:0;
+      width:100vw; height:100vh;
+      z-index:-3;
+    }
+
+    /* subtle scanlines */
+    .scanlines{
+      position:fixed; inset:0;
+      pointer-events:none;
+      z-index:-2;
+      background:repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,.02),
+        rgba(255,255,255,.02) 1px,
+        rgba(0,0,0,0) 3px,
+        rgba(0,0,0,0) 6px
+      );
+      mix-blend-mode:overlay;
+      opacity:.55;
+      animation: scanShift 8s linear infinite;
+    }
+    @keyframes scanShift{
+      0%{ transform:translateY(0); }
+      100%{ transform:translateY(18px); }
+    }
+
+    /* occasional glitch overlay */
+    .glitch-overlay{
+      position:fixed; inset:0;
+      pointer-events:none;
+      z-index:-1;
+      opacity:0;
+      background:
+        linear-gradient(90deg, rgba(255,62,62,.10), rgba(0,242,255,.10)),
+        radial-gradient(circle at 20% 30%, rgba(0,242,255,.10), transparent 40%),
+        radial-gradient(circle at 70% 60%, rgba(255,62,62,.10), transparent 45%);
+      mix-blend-mode:screen;
+      filter:contrast(120%) saturate(110%);
+    }
+    .glitch-on{ animation: glitchFlash 260ms steps(2,end) 1; }
+    @keyframes glitchFlash{
+      0%{ opacity:0; transform:translate(0,0); }
+      30%{ opacity:.75; transform:translate(2px,-1px); }
+      60%{ opacity:.35; transform:translate(-3px,1px); }
+      100%{ opacity:0; transform:translate(0,0); }
+    }
+
+    /* ==========================================
+       LAYOUT — 3 COLUMNS: NAV / PHONE / MONITOR
+       ========================================== */
+    #os-container{
+      height:100vh;
+      display:grid;
+      grid-template-columns: 96px minmax(340px, 1fr) 360px;
+      gap:14px;
+      padding:14px;
+      backdrop-filter: blur(10px);
+    }
+
+    /* NAV */
+    #nav-sidebar{
+      border:1px solid var(--line);
+      border-radius:var(--r);
+      background:linear-gradient(180deg, rgba(10,10,12,.60), rgba(10,10,12,.35));
+      box-shadow:var(--shadow);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      padding:12px 10px;
+      gap:10px;
+    }
+
+    .brand{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 10px;
+      background:rgba(0,0,0,.25);
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      margin-bottom:6px;
+    }
+    .brand .t1{
+      font-family:var(--mono);
+      font-size:12px;
+      color:var(--muted);
+    }
+    .brand .t2{
+      font-family:var(--mono);
+      font-size:14px;
+      color:var(--neon-blue);
+      letter-spacing:.8px;
+    }
+
+    .app-icon{
+      width:64px;
+      height:64px;
+      border-radius:16px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.04);
+      display:grid;
+      place-items:center;
+      cursor:pointer;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+      position:relative;
+      overflow:hidden;
+    }
+    .app-icon:hover{
+      transform: translateY(-1px);
+      border-color: rgba(0,242,255,.40);
+      background: rgba(0,242,255,.06);
+    }
+    .app-icon.active{
+      border-color: rgba(0,242,255,.65);
+      box-shadow: 0 0 0 1px rgba(0,242,255,.35) inset;
+      background: rgba(0,242,255,.10);
+    }
+    .app-icon .emoji{ font-size:28px; }
+    .app-icon .dot{
+      position:absolute; right:10px; bottom:10px;
+      width:8px; height:8px; border-radius:50%;
+      background: rgba(0,255,65,.85);
+      box-shadow: 0 0 12px rgba(0,255,65,.55);
+      opacity:0;
+    }
+    .app-icon.has-new .dot{ opacity:1; }
+
+    /* PHONE */
+    #phone-display{
+      border:1px solid var(--line);
+      border-radius:var(--r);
+      background:linear-gradient(180deg, rgba(18,18,20,.72), rgba(18,18,20,.44));
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      position:relative;
+    }
+
+    #status-bar{
+      height:44px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:0 14px;
+      border-bottom:1px solid var(--line);
+      font-size:12px;
+      color:var(--muted);
+      background: rgba(0,0,0,.20);
+    }
+    #status-bar .left{
+      display:flex; gap:10px; align-items:center;
+    }
+    #status-bar .pill{
+      border:1px solid var(--line);
+      padding:4px 8px;
+      border-radius:999px;
+      background: rgba(255,255,255,.04);
+    }
+    #battery{
+      color: var(--glitch-red);
+    }
+
+    #content-body{
+      flex:1;
+      overflow:auto;
+      padding:14px 14px 10px;
+      scroll-behavior:smooth;
+    }
+    #content-body::-webkit-scrollbar{ width: 10px; }
+    #content-body::-webkit-scrollbar-thumb{
+      background: rgba(255,255,255,.10);
+      border-radius: 999px;
+      border: 2px solid rgba(0,0,0,.25);
+    }
+
+    #input-dock{
+      border-top:1px solid var(--line);
+      background: rgba(0,0,0,.18);
+      padding:10px 12px 12px;
+    }
+    #reply-options{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+    }
+
+    .btn{
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      border-radius: 14px;
+      padding:10px 12px;
+      font-size:12px;
+      cursor:pointer;
+      transition: transform .12s ease, border-color .12s ease, background .12s ease;
+      max-width: 100%;
+    }
+    .btn:hover{
+      transform: translateY(-1px);
+      border-color: rgba(0,242,255,.40);
+      background: rgba(0,242,255,.10);
+    }
+    .btn:active{
+      transform: translateY(0);
+    }
+    .btn.disabled{
+      opacity:.45;
+      cursor:not-allowed;
+      transform:none;
+    }
+
+    /* CHAT UI */
+    .chat-thread{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .msg{
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      border-radius:16px;
+      padding:10px 12px;
+      max-width: 86%;
+      position:relative;
+      box-shadow: 0 10px 30px rgba(0,0,0,.22);
+    }
+    .msg .meta{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      font-size:11px;
+      color: var(--muted);
+      margin-bottom:6px;
+    }
+    .msg .sender{
+      color: var(--neon-blue);
+      letter-spacing:.6px;
+    }
+    .msg .time{
+      opacity:.8;
+    }
+    .msg .text{
+      font-size:13px;
+      line-height:1.55;
+      white-space:pre-wrap;
+    }
+    .msg.mine{
+      align-self:flex-end;
+      border-color: rgba(0,242,255,.18);
+      background: rgba(0,242,255,.06);
+    }
+    .msg.mine .sender{
+      color: rgba(233,238,242,.90);
+    }
+
+    .inline-img{
+      margin-top:8px;
+      border:1px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      overflow:hidden;
+      background: rgba(255,255,255,.04);
+    }
+    .inline-img img{ display:block; width:100%; height:auto; opacity:.92; }
+
+    .typewriter-caret{
+      display:inline-block;
+      width:10px;
+      margin-left:2px;
+      color: var(--terminal-green);
+      animation: caretBlink 850ms steps(2,end) infinite;
+    }
+    @keyframes caretBlink{
+      0%, 50%{ opacity:1; }
+      51%, 100%{ opacity:0; }
+    }
+
+    /* NOTES */
+    .notes-wrap{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .note-card{
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:16px;
+      background: rgba(0,0,0,.18);
+      padding:12px;
+    }
+    .note-card h4{
+      margin:0 0 8px;
+      font-size:13px;
+      color: var(--neon-blue);
+    }
+    .note-card p{
+      margin:0;
+      font-size:13px;
+      line-height:1.6;
+      color: rgba(233,238,242,.90);
+      white-space:pre-wrap;
+    }
+
+    /* GALLERY */
+    .gallery-grid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap:12px;
+    }
+    .photo{
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:16px;
+      overflow:hidden;
+      background: rgba(0,0,0,.18);
+      cursor:pointer;
+      transition: transform .12s ease, border-color .12s ease;
+    }
+    .photo:hover{
+      transform: translateY(-1px);
+      border-color: rgba(0,242,255,.35);
+    }
+    .photo img{ display:block; width:100%; height:140px; object-fit:cover; opacity:.90; }
+    .photo .cap{
+      padding:10px 10px 12px;
+      font-size:12px;
+      color: rgba(233,238,242,.82);
+    }
+
+    /* SYSTEM */
+    .sys-wrap{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .sys-card{
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:16px;
+      background: rgba(0,0,0,.18);
+      padding:12px;
+    }
+    .sys-card .row{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-size:12px;
+      color: rgba(233,238,242,.86);
+      padding:6px 0;
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .sys-card .row:last-child{ border-bottom:none; }
+    .tag{
+      border:1px solid rgba(255,255,255,.12);
+      padding:3px 8px;
+      border-radius:999px;
+      color: rgba(233,238,242,.85);
+      background: rgba(255,255,255,.05);
+      font-size:11px;
+      white-space:nowrap;
+    }
+    .tag.blue{ border-color: rgba(0,242,255,.25); background: rgba(0,242,255,.08); }
+    .tag.green{ border-color: rgba(0,255,65,.22); background: rgba(0,255,65,.08); }
+
+    /* MONITOR */
+    #monitor{
+      border:1px solid var(--line);
+      border-radius:var(--r);
+      background: linear-gradient(180deg, rgba(10,10,12,.70), rgba(10,10,12,.42));
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    #monitor header{
+      padding:12px 12px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+    }
+    #monitor header h3{
+      margin:0;
+      font-size:13px;
+      letter-spacing:.8px;
+      color: rgba(233,238,242,.92);
+    }
+    #monitor header .mini{
+      display:flex; gap:8px; align-items:center;
+      color: var(--muted);
+      font-size:11px;
+    }
+
+    #chart{
+      padding:12px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    #chart-canvas{
+      width:100%;
+      height:260px;
+      display:block;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:16px;
+      background: rgba(0,0,0,.22);
+    }
+
+    #log-console{
+      flex:1;
+      padding:12px;
+      overflow:auto;
+      font-size:11px;
+      color: rgba(233,238,242,.84);
+      line-height:1.45;
+      white-space:pre-wrap;
+    }
+    #log-console::-webkit-scrollbar{ width: 10px; }
+    #log-console::-webkit-scrollbar-thumb{
+      background: rgba(255,255,255,.10);
+      border-radius: 999px;
+      border: 2px solid rgba(0,0,0,.25);
+    }
+
+    /* Small "shake" effect (simulated vibration) */
+    .shake{
+      animation: shake 220ms ease-in-out 1;
+    }
+    @keyframes shake{
+      0%{ transform: translate(0,0); }
+      25%{ transform: translate(2px,-1px); }
+      50%{ transform: translate(-3px,1px); }
+      75%{ transform: translate(2px,1px); }
+      100%{ transform: translate(0,0); }
+    }
+
+    /* responsive fallback */
+    @media (max-width: 1080px){
+      #os-container{
+        grid-template-columns: 86px 1fr;
+      }
+      #monitor{ display:none; }
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="vfx-canvas"></canvas>
+  <div class="scanlines"></div>
+  <div id="glitch" class="glitch-overlay"></div>
+
+  <div id="os-container">
+    <nav id="nav-sidebar">
+      <div class="brand">
+        <div class="t1">AETHEL OS</div>
+        <div class="t2">ENTROPY / FULL</div>
+      </div>
+
+      <div class="app-icon active" data-app="chat" title="Chat">
+        <span class="emoji">💬</span>
+        <span class="dot"></span>
+      </div>
+      <div class="app-icon" data-app="notes" title="Notes">
+        <span class="emoji">📝</span>
+        <span class="dot"></span>
+      </div>
+      <div class="app-icon" data-app="gallery" title="Gallery">
+        <span class="emoji">🖼️</span>
+        <span class="dot"></span>
+      </div>
+      <div class="app-icon" data-app="system" title="System">
+        <span class="emoji">⚙️</span>
+        <span class="dot"></span>
+      </div>
+    </nav>
+
+    <main id="phone-display">
+      <div id="status-bar">
+        <div class="left">
+          <span id="clock" class="pill">--:--</span>
+          <span class="pill">5G</span>
+          <span class="pill" id="signal">[|||| ]</span>
+        </div>
+        <div class="right">
+          <span class="pill" id="battery">1%</span>
+        </div>
+      </div>
+
+      <div id="content-body"></div>
+
+      <div id="input-dock">
+        <div id="reply-options"></div>
+      </div>
+    </main>
+
+    <aside id="monitor">
+      <header>
+        <h3>意識一致性分析</h3>
+        <div class="mini">
+          <span class="tag blue" id="tag-app">APP: chat</span>
+          <span class="tag green" id="tag-state">STATE: ACTIVE</span>
+        </div>
+      </header>
+
+      <div id="chart">
+        <canvas id="chart-canvas" width="320" height="260"></canvas>
+      </div>
+
+      <div id="log-console"></div>
+    </aside>
+  </div>
+
+<script>
+/* =========================================================
+   AETHEL OS — FULL EDITION
+   Architecture:
+   - VFXEngine: canvas noise + matrix rain + glitch cues
+   - ScriptDB: data model for chat / notes / gallery / system
+   - DialogEngine: typewriter + branching replies + unlock
+   - StateMachine: app routing + progress gating + scoring
+   - ConsciousnessAudit: micro-actions -> report + chart
+   ========================================================= */
+
+/* =========================================================
+   Utility
+   ========================================================= */
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function nowHHMM(){
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${hh}:${mm}`;
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+function softLog(lines){
+  const el = $("#log-console");
+  const s = Array.isArray(lines) ? lines.join("\n") : String(lines);
+  el.textContent += (el.textContent ? "\n" : "") + s;
+  el.scrollTop = el.scrollHeight;
+}
+
+/* =========================================================
+   PART 1 — VFX Engine
+   ========================================================= */
+class VFXEngine{
+  constructor(canvas, glitchEl){
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d", { alpha: true });
+    this.glitchEl = glitchEl;
+
+    this.w = 0;
+    this.h = 0;
+
+    // matrix rain
+    this.cols = 0;
+    this.colW = 14;
+    this.drops = [];
+
+    // noise
+    this.noiseSeed = Math.random()*9999;
+
+    // glitch scheduling
+    this.nextGlitchAt = performance.now() + 1800 + Math.random()*2200;
+    this.enabled = true;
+
+    this.resize();
+    window.addEventListener("resize", ()=>this.resize());
+  }
+
+  resize(){
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    this.w = Math.floor(window.innerWidth * dpr);
+    this.h = Math.floor(window.innerHeight * dpr);
+    this.canvas.width = this.w;
+    this.canvas.height = this.h;
+    this.canvas.style.width = window.innerWidth + "px";
+    this.canvas.style.height = window.innerHeight + "px";
+
+    this.cols = Math.ceil(this.w / (this.colW*dpr));
+    this.drops = new Array(this.cols).fill(0).map(()=>Math.random()*this.h);
+    this.ctx.setTransform(1,0,0,1,0,0);
+  }
+
+  triggerGlitch(){
+    if(!this.enabled) return;
+    this.glitchEl.classList.remove("glitch-on");
+    void this.glitchEl.offsetWidth; // reflow
+    this.glitchEl.classList.add("glitch-on");
+  }
+
+  drawNoise(t){
+    // cheap animated grain
+    const ctx = this.ctx;
+    const step = 3; // larger => faster, less detailed
+    const alpha = 0.06;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    for(let y=0; y<this.h; y+=step*6){
+      for(let x=0; x<this.w; x+=step*6){
+        const n = (Math.sin((x*0.02) + (y*0.03) + (t*0.001) + this.noiseSeed) + 1) * 0.5;
+        const g = Math.floor(20 + n*60);
+        ctx.fillStyle = `rgb(${g},${g},${g})`;
+        ctx.fillRect(x, y, step*2, step*2);
+      }
+    }
+    ctx.restore();
+  }
+
+  drawMatrix(t){
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = `${12 * (this.w / window.innerWidth)}px Courier New`;
+    ctx.textBaseline = "top";
+
+    const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+=-";
+    for(let i=0; i<this.cols; i++){
+      const x = i * (this.colW * (this.w / window.innerWidth));
+      const y = this.drops[i];
+
+      const c = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillStyle = "rgba(0,255,65,0.14)";
+      ctx.fillText(c, x, y);
+
+      // occasional brighter head
+      if(Math.random()<0.025){
+        ctx.fillStyle = "rgba(0,255,65,0.38)";
+        ctx.fillText(chars[Math.floor(Math.random() * chars.length)], x, y-14);
+      }
+
+      const speed = 16 + (i%7)*2;
+      this.drops[i] += speed;
+
+      if(this.drops[i] > this.h + 40){
+        this.drops[i] = -Math.random()*120;
+      }
+    }
+
+    ctx.restore();
+  }
+
+  tick(t){
+    if(!this.enabled) return;
+
+    const ctx = this.ctx;
+    // clear with translucency for trails
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(0, 0, this.w, this.h);
+
+    this.drawNoise(t);
+    this.drawMatrix(t);
+
+    if(t >= this.nextGlitchAt){
+      this.triggerGlitch();
+      this.nextGlitchAt = t + 1800 + Math.random()*2200;
+    }
+    requestAnimationFrame((tt)=>this.tick(tt));
+  }
+}
+
+/* =========================================================
+   PART 2 — ScriptDB (Deep Text Database)
+   - We keep the structure realistic, and also provide
+     a generator to scale the amount of content.
+   ========================================================= */
+
+function makeInlineSVGDataURI(label){
+  // lightweight pseudo-image; no external assets
+  const svg = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="720" height="420">
+    <defs>
+      <linearGradient id="g" x1="0" x2="1">
+        <stop offset="0" stop-color="#00f2ff" stop-opacity="0.18"/>
+        <stop offset="1" stop-color="#ff3e3e" stop-opacity="0.12"/>
+      </linearGradient>
+    </defs>
+    <rect width="100%" height="100%" fill="#0b0b0d"/>
+    <rect x="18" y="18" width="684" height="384" rx="20" fill="url(#g)" stroke="rgba(255,255,255,0.12)"/>
+    <text x="44" y="86" fill="rgba(233,238,242,0.92)" font-family="Courier New" font-size="28">AETHEL OS / ARCHIVE</text>
+    <text x="44" y="132" fill="rgba(0,255,65,0.78)" font-family="Courier New" font-size="18">FILE: ${label}</text>
+    <text x="44" y="180" fill="rgba(233,238,242,0.78)" font-family="Courier New" font-size="16">「像是有人用很慢的速度，把世界擦乾淨。」</text>
+    <text x="44" y="210" fill="rgba(233,238,242,0.62)" font-family="Courier New" font-size="14">— fragments / entropy crack</text>
+  </svg>`;
+  const encoded = encodeURIComponent(svg).replace(/'/g,"%27").replace(/"/g,"%22");
+  return `data:image/svg+xml;charset=utf-8,${encoded}`;
+}
+
+/**
+ * Message schema (explicit symbols to avoid ambiguity):
+ * - id: string, unique message id
+ * - sender: string, display name
+ * - text: string, main text (everyday)
+ * - thriller: string, optional unsettling subtext
+ * - style: string, style tag (e.g. "yoshimoto", "minato")
+ * - img: {src, caption} optional inline image
+ * - replies: Array<{ text: string, val: { material: number, mind: number }, unlock?: string[] }>
+ */
+
+/**
+ * Chapter 1 — Inbox (hand-written, richer tone)
+ * Notes:
+ * - The "hollow" feeling often comes from lack of recurring motifs + concrete anchors.
+ * - This chapter adds: (a) the fixed timestamp 14:20, (b) count mismatch (2 vs 3 cups),
+ *   (c) handwriting imitation, (d) doorplate drift.
+ */
+const inboxChapter1 = [
+  {
+    id:"msg_001",
+    sender:"Lover",
+    text:"嘿，你還記得我們一起種的那株薄荷嗎？我剛才澆水時，發現它的葉子綠得有些不自然。\n我把它移到窗邊，光像一層薄薄的糖衣，覆在葉脈上。",
+    thriller:"但味道不對。\n薄荷的清涼裡混著油漆味，像剛粉刷完的牆。\n我明明沒粉刷。",
+    style:"yoshimoto",
+    img:{ src: makeInlineSVGDataURI("mint_plant_001"), caption:"薄荷盆栽 / 14:20 / 光源不明" },
+    replies:[
+      { text:"「可能是最近太乾，土味變重了。」", val:{ material: 5, mind: 1 }, unlock:["note_001"] },
+      { text:"「你先別靠太近，描述一下油漆味像哪一種。」", val:{ material: 0, mind: 8 }, unlock:["sys_flag_lowpower"] }
+    ]
+  },
+
+  {
+    id:"msg_002",
+    sender:"Lover",
+    text:"我把窗簾拉到只剩一條縫。客廳就像縮小成盒子。\n盒子裡有你上次留下的杯子，還有那個我們一直懶得丟的吸管。",
+    thriller:"可是我在水槽裡又看到一個杯子。\n第三個。\n我們家一直只有兩個杯子。",
+    style:"yoshimoto",
+    replies:[
+      { text:"「是不是你之前買飲料忘了？」", val:{ material: 6, mind: 0 }, unlock:["gallery_001"] },
+      { text:"「第三個杯子長什麼樣？有圖嗎？」", val:{ material: 1, mind: 7 }, unlock:["gallery_002"] }
+    ]
+  },
+
+  {
+    id:"msg_003",
+    sender:"Lover",
+    text:"我拍了照。\n你不要笑我，我拍照的時候手一直抖。\n杯子很普通，是透明的，像便利商店那種。\n但杯口有一圈唇印。",
+    thriller:"唇印很新。\n我今天沒喝。\n而且那唇印的位置太高了，像是…不是我。",
+    style:"minato",
+    img:{ src: makeInlineSVGDataURI("cup_003"), caption:"水槽 / 第三個杯子 / 唇印位置不合理" },
+    replies:[
+      { text:"「也許是你剛剛漱口。」", val:{ material: 6, mind: 0 } },
+      { text:"「把杯子先留著，不要洗。看看有沒有任何標籤或字。」", val:{ material: 0, mind: 8 }, unlock:["note_002"] }
+    ]
+  },
+
+  {
+    id:"msg_004",
+    sender:"Lover",
+    text:"杯底有一串數字。\n我以為是回收標誌。\n結果不是，它像某種…編號。\n我用指甲去刮，刮到指尖發熱。",
+    thriller:"刮掉兩位後，剩下的部分看起來像我們家的門牌。\n但少了一個數字。\n你知道嗎？那種少掉的感覺很像失憶。",
+    style:"yoshimoto",
+    replies:[
+      { text:"「先停下，不要再刮了。你說那串數字拍給我看。」", val:{ material: 3, mind: 6 }, unlock:["gallery_003"] },
+      { text:"「如果像門牌，那就去門口確認一次。」", val:{ material: 2, mind: 7 }, unlock:["note_003"] }
+    ]
+  },
+
+  {
+    id:"msg_005",
+    sender:"Lover",
+    text:"我去門口了。\n走廊很冷，像有人把冷氣開在天花板裡。\n門牌還在，但我盯著看，眼睛開始酸。",
+    thriller:"因為它一瞬間變成另一個數字。\n不是錯一位，是整個格式都不一樣。\n像是我走錯樓層，但我明明沒動。",
+    style:"minato",
+    replies:[
+      { text:"「你可能太累了。回家，喝水，坐下。」", val:{ material: 7, mind: 0 } },
+      { text:"「你再看一次：你現在看到的門牌是什麼？逐字講。」", val:{ material: 0, mind: 9 }, unlock:["sys_flag_lowpower"] }
+    ]
+  },
+
+  {
+    id:"msg_006",
+    sender:"Lover",
+    text:"我坐回沙發了。\n薄荷在窗邊，看起來很乖。\n第三個杯子在水槽裡，看起來也很乖。\n可是這種『乖』讓我更怕。",
+    thriller:"因為好像有人替我把一切都整理好了。\n整理到剛剛好，讓我不會求救。",
+    style:"yoshimoto",
+    replies:[
+      { text:"「我在。你先把家裡燈全開。」", val:{ material: 5, mind: 3 } },
+      { text:"「你現在最怕的是什麼？不是事件，是感覺。」", val:{ material: 0, mind: 8 } }
+    ]
+  },
+
+  {
+    id:"msg_007",
+    sender:"Lover",
+    text:"我打開燈。\n燈沒有壞。\n壞的是我對光的信任。\n光照到桌面時，桌上多了一張便條紙。",
+    thriller:"便條紙上是你的筆跡。\n但你沒有來。\n便條紙寫：『不要再回頭看門牌。』",
+    style:"minato",
+    img:{ src: makeInlineSVGDataURI("note_paper_001"), caption:"桌面便條 / 筆跡像你 / 但時間戳是 14:20" },
+    replies:[
+      { text:"「可能是你以前寫的，忘了。」", val:{ material: 7, mind: 0 } },
+      { text:"「你把字逐字念給我聽，不要省略標點。」", val:{ material: 0, mind: 9 }, unlock:["note_004"] }
+    ]
+  },
+
+  {
+    id:"msg_008",
+    sender:"Lover",
+    text:"我念完了。\n念完的一瞬間，手機自己震了一下。\n就像它在提醒我：我做對了某件事。",
+    thriller:"可是我不想被獎勵。\n我只想知道：誰在設計這些獎勵。",
+    style:"yoshimoto",
+    replies:[
+      { text:"「先把便條紙收起來，放進抽屜。」", val:{ material: 6, mind: 1 } },
+      { text:"「拍照。留證據。不要相信記憶。」", val:{ material: 2, mind: 7 }, unlock:["gallery_004"] }
+    ]
+  },
+
+  {
+    id:"msg_009",
+    sender:"Lover",
+    text:"我打開相簿想找剛剛的照片。\n結果相簿自己跳到一張我沒拍過的圖。\n是我們家的門口。\n角度很低，像有人蹲著。",
+    thriller:"門牌號碼錯一位。\n錯得很整齊。\n像一個被認真維護的錯。",
+    style:"minato",
+    img:{ src: makeInlineSVGDataURI("door_002"), caption:"門口 / 低角度 / 門牌錯一位（固定錯）" },
+    replies:[
+      { text:"「把那張圖先存到雲端或傳我。」", val:{ material: 4, mind: 5 } },
+      { text:"「你看圖的右下角，有沒有時間？」", val:{ material: 0, mind: 9 }, unlock:["note_005"] }
+    ]
+  },
+
+  {
+    id:"msg_010",
+    sender:"Lover",
+    text:"右下角有時間。\n14:20。\n我覺得它像一根刺，刺在所有東西上。\n薄荷照片是 14:20，便條紙是 14:20，門口照片也是。",
+    thriller:"我突然想到：\n如果有人把時間釘住，是不是就能把人也釘住？",
+    style:"yoshimoto",
+    replies:[
+      { text:"「你先別再往下挖了，今天到這裡。」", val:{ material: 8, mind: 0 } },
+      { text:"「14:20 那一刻，你在做什麼？慢慢回想。」", val:{ material: 0, mind: 10 }, unlock:["note_006"] }
+    ]
+  },
+
+  {
+    id:"msg_011",
+    sender:"Lover",
+    text:"我想起來了。\n那天你說你要去買薄荷。\n你說：『我去一下就回來。』\n我在廚房洗杯子。\n我洗了兩個杯子。",
+    thriller:"但水槽裡後來變成三個。\n我一直以為是我記錯。\n可是今天它又回來了。\n像是在提醒我：我不是記錯，是被改寫。",
+    style:"minato",
+    replies:[
+      { text:"「也許第三個杯子是那天店家附的。」", val:{ material: 6, mind: 0 } },
+      { text:"「如果是改寫，那改寫是為了讓你不追究什麼？」", val:{ material: 0, mind: 10 }, unlock:["sys_flag_lowpower"] }
+    ]
+  },
+
+  {
+    id:"msg_012",
+    sender:"Lover",
+    text:"我突然很想問你一件事。\n你先不要覺得我瘋。\n如果有另一個版本的你，住在另一個版本的我們家，\n那你覺得…他會不會也在安慰另一個版本的我？",
+    thriller:"我覺得我不是在跟你聊天。\n我是在跟『可以被你理解的那個你』聊天。\n剩下的部分，被誰藏起來了。",
+    style:"yoshimoto",
+    replies:[
+      { text:"「你只需要知道：我在。」", val:{ material: 7, mind: 2 } },
+      { text:"「我們先定義：什麼叫同一個人。」", val:{ material: 0, mind: 10 }, unlock:["note_007"] }
+    ]
+  }
+];
+
+/**
+ * Bulk script generator:
+ * You can quickly scale to 50–80 stages without hand-writing each one.
+ * It generates "everyday memory + unsettling crack" pairs.
+ */
+function generateChatStages(count=24, startIndex=13){
+  const base = [];
+  const motifs = [
+    {a:"家", b:"門口", c:"門牌"},
+    {a:"杯子", b:"水槽", c:"唇印"},
+    {a:"薄荷", b:"陽台", c:"油漆味"},
+    {a:"窗簾", b:"走廊", c:"腳步聲"},
+    {a:"冰箱", b:"便條紙", c:"多出的一筆"},
+    {a:"電梯", b:"鏡子", c:"晚一步的倒影"},
+    {a:"雨", b:"樓梯間", c:"不屬於你的鞋印"},
+    {a:"餐桌", b:"刀叉", c:"數量永遠多一副"}
+  ];
+
+  for(let i=0;i<count;i++){
+    const idx = startIndex + i;
+    const m = motifs[i % motifs.length];
+    base.push({
+      id:`msg_${String(idx).padStart(3,'0')}`,
+      sender:"Lover",
+      text:`我今天想到「${m.a}」這個字。它很普通，普通到你以為它不會背叛你。\n但我在${m.b}看到了一個細節，像是有人把它改寫成別人的版本。`,
+      thriller:`那個細節是：${m.c}。\n它不是恐怖，它更像是一種『正在被取代』的證據。`,
+      style: (i%2===0) ? "yoshimoto" : "minato",
+      replies:[
+        { text:"「也許只是巧合。」", val:{ material: 5, mind: 1 }, unlock: (i%3===0)?["note_003"]:[] },
+        { text:"「你覺得它在提醒什麼？」", val:{ material: 0, mind: 8 }, unlock: (i%4===0)?["sys_flag_lowpower"]:[] }
+      ]
+    });
+  }
+  return base;
+}
+
+const ScriptDB = {
+  chat: {
+    inbox: [...inboxChapter1, ...generateChatStages(24, 13)],
+    history: []
+  },
+
+  notes: [
+    { id:"note_001", title:"關於消失的日記", content:"今天是他失蹤的第 89 天。\n我在廚房發現了第三隻杯子。\n杯子內側有一道刮痕，像是有人用指甲急著刮掉某個名字。\n\n我想起你說過：『家是最小的宇宙。』\n但宇宙如果被剪掉一角，還算宇宙嗎？" },
+    { id:"note_002", title:"薄荷的味道", content:"薄荷應該清涼。\n可今天它帶著油漆味。\n我把鼻子湊近時，忽然覺得那不是植物，而是某種『記憶的替身』。\n\n你有沒有想過：\n我們記得的，是同一件事嗎？" },
+    { id:"note_003", title:"失蹤當晚（碎片）", content:"燈沒有壞。\n壞的是我對光的信任。\n\n他說：『我去一下就回來。』\n可是『一下』是個很狡猾的單位。\n它可以變成一輩子。" }
+  ],
+
+  gallery: [
+    { id:"gallery_001", caption:"杯子 / 客廳 / 低電量 1%", src: makeInlineSVGDataURI("cup_001") },
+    { id:"gallery_002", caption:"窗簾縫隙 / 空氣像被摺疊", src: makeInlineSVGDataURI("curtain_001") },
+    { id:"gallery_003", caption:"門口照片 / 門牌號碼不一致", src: makeInlineSVGDataURI("door_001") }
+  ],
+
+  system: {
+    flags: {
+      lowPower: true,
+      glitchSensitivity: 0.65,
+      lockState: false
+    },
+    device: {
+      model: "AETHEL-01",
+      osVersion: "Entropy裂縫 / build 0.9.3",
+      storage: "ARCHIVE: 13% free",
+      network: "5G (unstable)"
+    }
+  }
+};
+
+
+/* =========================================================
+   CHAPTER STRUCTURE & PHILOSOPHICAL LOOP
+   - Materialism choices advance state
+   - Idealism choices loop memory fragments
+   ========================================================= */
+
+const LOOP_THRESHOLD = 3; // how many times idealism can repeat before obvious stasis
+
+function applyChoiceEffect(choice, state){
+  if(choice.val.mind > choice.val.material){
+    state.loopCount = (state.loopCount || 0) + 1;
+    state.progress = Math.max(0, state.progress - 1);
+  }else{
+    state.loopCount = 0;
+    state.progress += 1;
+  }
+
+  if(state.loopCount >= LOOP_THRESHOLD){
+    state.flags = state.flags || {};
+    state.flags.stuckInMemory = true;
+  }
+}
+
+/**
+ * Refined dialogue generator:
+ * - Everyday first (mundane domestic detail)
+ * - One rational explanation suggested by the player
+ * - One irrational temptation that causes looping
+ * - Horror only appears in the last line
+ */
+function generateChapter2Stages(count=18, startIndex=100){
+  const base = [];
+  const scenes = [
+    {
+      daily:"我剛剛把碗盤收進櫃子裡。碗疊得很好，沒有聲音。",
+      rational:"也許只是我記錯數量。",
+      irrational:"可是如果它自己多出來呢？",
+      horror:"我關上櫃門時，裡面傳來第三次碰撞聲。"
+    },
+    {
+      daily:"我在摺衣服。你的衣服還是習慣摺在左邊。",
+      rational:"人會留下習慣，物品不會說謊。",
+      irrational:"如果習慣比人活得久呢？",
+      horror:"我發現那件衣服的尺寸不是你的。"
+    },
+    {
+      daily:"我把垃圾拿去丟，走廊的燈一盞一盞亮起來。",
+      rational:"感應燈本來就會延遲。",
+      irrational:"如果它是在等我經過呢？",
+      horror:"最後一盞燈沒有亮。"
+    },
+    {
+      daily:"我照著食譜煮湯，鹽放得剛好。",
+      rational:"味道穩定，代表事情還在控制中。",
+      irrational:"但你以前說我鹽放太多。",
+      horror:"湯滾起來時，我聽見有人說『太鹹了』。"
+    }
+  ];
+
+  for(let i=0;i<count;i++){
+    const idx = startIndex + i;
+    const s = scenes[i % scenes.length];
+
+    base.push({
+      id:`msg_${idx}`,
+      sender:"Lover",
+      text:`${s.daily}`,
+      thriller:`${s.horror}`,
+      style:"yoshimoto",
+      replies:[
+        {
+          text:`「${s.rational}」`,
+          val:{ material: 8, mind: 0 },
+          unlock:(i%5===0)?["note_material_progress"]:[]
+        },
+        {
+          text:`「${s.irrational}」`,
+          val:{ material: 0, mind: 8 },
+          unlock:["note_memory_loop"]
+        }
+      ]
+    });
+  }
+  return base;
+}
+
+/* =========================================================
+   CHAPTER END — MATERIAL TRUTH REVEAL
+   ========================================================= */
+
+const chapterEndEvent = {
+  id:"system_end_001",
+  sender:"SYSTEM",
+  text:"ARCHIVE SYNC COMPLETE",
+  thriller:"Status: SUBJECT_CONFIRMED_DECEASED\nLast physical record: 14:20\n\nMemory continuation detected.\nRational path required to proceed.",
+  style:"system",
+  replies:[
+    { text:"（關閉）", val:{ material: 0, mind: 0 } }
+  ]
+};
+
+// Append Chapter 2 and ending
+ScriptDB.chat.inbox = [
+  ...ScriptDB.chat.inbox,
+  ...generateChapter2Stages(18, 100),
+  chapterEndEvent
+];
+
+// Notes clarifying philosophy
+ScriptDB.notes.push(
+  {
+    id:"note_material_progress",
+    title:"物的連續性",
+    content:"物不會懷念你。\n它們只會留在原地。\n\n所以如果你想前進，\n你必須相信『留下來的是物，不是人』。"
+  },
+  {
+    id:"note_memory_loop",
+    title:"記憶循環",
+    content:"只要你選擇相信感覺，\n世界就會為你保留那一刻。\n\n但被保留下來的，\n從來不是對方。"
+  }
+);
+
+
+// Extra writing to thicken the world (less hollow)
+ScriptDB.notes.push(
+  { id:"note_004", title:"標點符號", content:"那張便條紙最可怕的不是句子。\n是逗號。\n你的逗號習慣性往左靠一點。\n但那張紙上的逗號太完美，像是模仿。\n\n模仿通常不是為了欺騙。\n模仿是為了取代。" },
+
+  { id:"note_005", title:"錯得很整齊", content:"門牌錯一位，表示『錯』不是失誤。\n是被維護的狀態。\n\n如果錯是被維護的，那正確在哪裡？\n正確是不是反而變成一種禁忌？" },
+
+  { id:"note_006", title:"14:20", content:"我把 14:20 寫在紙上。\n寫完的一瞬間，我聽到像電梯關門的聲音。\n但家裡沒有電梯。\n\n時間像門。\n門一旦關上，就有人被留在外面。" },
+
+  { id:"note_007", title:"同一個人", content:"同一個人，是指同一段記憶嗎？\n還是同一套反應？\n\n如果有人把記憶剪掉一角，你還會愛那個人嗎？\n或者你愛的是『你以為他會做出的選擇』？" }
+);
+
+ScriptDB.gallery.push(
+  { id:"gallery_004", caption:"便條紙特寫 / 字跡像你但不完全像", src: makeInlineSVGDataURI("note_paper_close_001") }
+);
+
+
+
+/* =========================================================
+   PART 3 — Consciousness Audit (micro-actions)
+   ========================================================= */
+class ConsciousnessAudit{
+  constructor(){
+    this.reset();
+  }
+
+  reset(){
+    this.metrics = {
+      // Scores (material vs mind)
+      materialScore: 0,
+      mindScore: 0,
+
+      // micro-actions counters
+      taps: 0,
+      appSwitches: 0,
+      repliesChosen: 0,
+      notesOpened: 0,
+      photosOpened: 0,
+      settingsOpened: 0,
+      scrollDistance: 0,
+
+      // derived
+      coherence: 50,     // 0..100
+      drift: 0,          // mind - material (normalized)
+      anxiety: 12        // 0..100 (fictional)
+    };
+    this.timeline = []; // [{t, material, mind, coherence}]
+  }
+
+  applyDelta(delta){
+    // delta: {material, mind}
+    const m = this.metrics;
+    m.materialScore += (delta.material || 0);
+    m.mindScore += (delta.mind || 0);
+
+    // drift: mind-material
+    const rawDrift = m.mindScore - m.materialScore;
+    m.drift = clamp(rawDrift, -100, 100);
+
+    // coherence logic (fictional but consistent):
+    // too extreme drift reduces coherence; balanced increases
+    const balance = 100 - Math.abs(m.drift);
+    const act = m.repliesChosen + m.appSwitches + Math.floor(m.scrollDistance/800);
+    m.coherence = clamp(Math.floor((balance*0.55) + (act*1.2)), 0, 100);
+
+    // anxiety: rises with mind focus + low power & glitches (handled elsewhere)
+    m.anxiety = clamp(Math.floor(10 + (m.mindScore*0.9) + (Math.abs(m.drift)*0.25)), 0, 100);
+
+    this.timeline.push({
+      t: Date.now(),
+      material: m.materialScore,
+      mind: m.mindScore,
+      coherence: m.coherence
+    });
+  }
+
+  bump(action){
+    const m = this.metrics;
+    if(action==="tap") m.taps++;
+    if(action==="app") m.appSwitches++;
+    if(action==="reply") m.repliesChosen++;
+    if(action==="note") m.notesOpened++;
+    if(action==="photo") m.photosOpened++;
+    if(action==="settings") m.settingsOpened++;
+  }
+
+  addScroll(px){
+    this.metrics.scrollDistance += Math.abs(px);
+  }
+
+  report(){
+    const m = this.metrics;
+    // A compact but “audit-ish” report (can be expanded infinitely)
+    const bias = (m.drift>=0) ? "Mind-heavy" : "Material-heavy";
+    const level =
+      m.coherence>=75 ? "STABLE" :
+      m.coherence>=50 ? "FLUCTUATING" :
+      "FRACTURED";
+
+    return [
+      `=== Consciousness Audit Report ===`,
+      `bias=${bias}`,
+      `materialScore=${m.materialScore}`,
+      `mindScore=${m.mindScore}`,
+      `coherence=${m.coherence}/100`,
+      `anxiety=${m.anxiety}/100`,
+      `micro_actions: taps=${m.taps}, appSwitches=${m.appSwitches}, replies=${m.repliesChosen}, notes=${m.notesOpened}, photos=${m.photosOpened}, settings=${m.settingsOpened}`,
+      `scrollDistance(px)=${Math.floor(m.scrollDistance)}`,
+      `state=${level}`,
+    ].join("\n");
+  }
+}
+
+/* =========================================================
+   Dialog Engine
+   - Typewriter rendering
+   - Inline image support
+   - Reply options + score deltas + unlock
+   ========================================================= */
+class DialogEngine{
+  constructor(rootBody, replyDock, audit, hooks){
+    this.rootBody = rootBody;
+    this.replyDock = replyDock;
+    this.audit = audit;
+    this.hooks = hooks;
+
+    this.typing = false;
+  }
+
+  clear(){
+    this.rootBody.innerHTML = "";
+    this.replyDock.innerHTML = "";
+  }
+
+  ensureThread(){
+    let thread = this.rootBody.querySelector(".chat-thread");
+    if(!thread){
+      thread = document.createElement("div");
+      thread.className = "chat-thread";
+      this.rootBody.appendChild(thread);
+    }
+    return thread;
+  }
+
+  mkMessageBubble({sender, text, mine=false, timeStr, img}){
+    const el = document.createElement("div");
+    el.className = "msg" + (mine ? " mine" : "");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = `<span class="sender">${escapeHtml(sender)}</span><span class="time">${escapeHtml(timeStr||nowHHMM())}</span>`;
+    const tx = document.createElement("div");
+    tx.className = "text";
+    tx.textContent = ""; // filled by typewriter or immediate
+
+    el.appendChild(meta);
+    el.appendChild(tx);
+
+    if(img && img.src){
+      const wrap = document.createElement("div");
+      wrap.className = "inline-img";
+      const im = document.createElement("img");
+      im.src = img.src;
+      im.alt = img.caption || "image";
+      wrap.appendChild(im);
+      el.appendChild(wrap);
+
+      if(img.caption){
+        const cap = document.createElement("div");
+        cap.style.marginTop = "8px";
+        cap.style.fontSize = "11px";
+        cap.style.color = "rgba(233,238,242,.70)";
+        cap.textContent = img.caption;
+        el.appendChild(cap);
+      }
+    }
+
+    return { el, tx };
+  }
+
+  async typewriter(targetEl, fullText, opts={}){
+    const { minDelay=12, maxDelay=28 } = opts;
+    this.typing = true;
+
+    targetEl.textContent = "";
+    const caret = document.createElement("span");
+    caret.className = "typewriter-caret";
+    caret.textContent = "█";
+    targetEl.appendChild(caret);
+
+    for(let i=0;i<fullText.length;i++){
+      caret.remove();
+      targetEl.textContent += fullText[i];
+      targetEl.appendChild(caret);
+
+      const d = minDelay + Math.random()*(maxDelay-minDelay);
+      await sleep(d);
+      this.hooks.onTypeChar?.(fullText[i], i);
+    }
+
+    caret.remove();
+    this.typing = false;
+  }
+
+  setReplies(replies, onChoose){
+    this.replyDock.innerHTML = "";
+    replies.forEach((r, idx)=>{
+      const b = document.createElement("button");
+      b.className = "btn";
+      b.textContent = r.text;
+      b.addEventListener("click", ()=>{
+        if(this.typing) return;
+        onChoose(r, idx);
+      });
+      this.replyDock.appendChild(b);
+    });
+  }
+
+  disableReplies(){
+    $$(".btn", this.replyDock).forEach(b=>b.classList.add("disabled"));
+  }
+
+  scrollToBottom(){
+    this.rootBody.scrollTop = this.rootBody.scrollHeight;
+  }
+}
+
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+/* =========================================================
+   App Renderers
+   ========================================================= */
+function renderNotesApp(root, notes, onOpen){
+  root.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "notes-wrap";
+  notes.forEach(n=>{
+    const card = document.createElement("div");
+    card.className = "note-card";
+    const h = document.createElement("h4");
+    h.textContent = n.title;
+    const p = document.createElement("p");
+    p.textContent = n.content;
+    card.appendChild(h);
+    card.appendChild(p);
+    card.addEventListener("click", ()=>onOpen(n.id));
+    wrap.appendChild(card);
+  });
+  root.appendChild(wrap);
+}
+
+function renderGalleryApp(root, photos, onOpen){
+  root.innerHTML = "";
+  const grid = document.createElement("div");
+  grid.className = "gallery-grid";
+  photos.forEach(ph=>{
+    const item = document.createElement("div");
+    item.className = "photo";
+    item.innerHTML = `
+      <img src="${ph.src}" alt="photo" />
+      <div class="cap">${escapeHtml(ph.caption)}</div>
+    `;
+    item.addEventListener("click", ()=>onOpen(ph.id));
+    grid.appendChild(item);
+  });
+  root.appendChild(grid);
+}
+
+function renderSystemApp(root, sys, audit){
+  root.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "sys-wrap";
+
+  const c1 = document.createElement("div");
+  c1.className = "sys-card";
+  c1.innerHTML = `
+    <div class="row"><span>Model</span><span class="tag blue">${escapeHtml(sys.device.model)}</span></div>
+    <div class="row"><span>OS</span><span class="tag">${escapeHtml(sys.device.osVersion)}</span></div>
+    <div class="row"><span>Storage</span><span class="tag">${escapeHtml(sys.device.storage)}</span></div>
+    <div class="row"><span>Network</span><span class="tag">${escapeHtml(sys.device.network)}</span></div>
+  `;
+
+  const c2 = document.createElement("div");
+  c2.className = "sys-card";
+  const flags = sys.flags;
+  c2.innerHTML = `
+    <div class="row"><span>Low Power</span><span class="tag ${flags.lowPower?'green':''}">${flags.lowPower ? "ON" : "OFF"}</span></div>
+    <div class="row"><span>Glitch Sensitivity</span><span class="tag">${flags.glitchSensitivity.toFixed(2)}</span></div>
+    <div class="row"><span>Lock State</span><span class="tag">${flags.lockState ? "LOCKED" : "UNLOCKED"}</span></div>
+  `;
+
+  const c3 = document.createElement("div");
+  c3.className = "sys-card";
+  c3.innerHTML = `<div style="white-space:pre-wrap;color:rgba(233,238,242,.88);font-size:12px;line-height:1.45;">${escapeHtml(audit.report())}</div>`;
+
+  wrap.appendChild(c1);
+  wrap.appendChild(c2);
+  wrap.appendChild(c3);
+  root.appendChild(wrap);
+}
+
+/* =========================================================
+   Chart Renderer (monitor)
+   - simple: material vs mind + coherence
+   ========================================================= */
+class MonitorChart{
+  constructor(canvas){
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+  }
+
+  draw(audit){
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    ctx.clearRect(0,0,w,h);
+
+    // background
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.fillRect(0,0,w,h);
+
+    const m = audit.metrics;
+
+    // axes
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(24, 16);
+    ctx.lineTo(24, h-22);
+    ctx.lineTo(w-14, h-22);
+    ctx.stroke();
+
+    // bars
+    const maxScore = Math.max(10, m.materialScore, m.mindScore);
+    const barW = 52;
+    const gap = 20;
+    const baseY = h - 22;
+
+    // material
+    const matH = Math.floor((m.materialScore / maxScore) * (h-56));
+    ctx.fillStyle = "rgba(0,242,255,0.22)";
+    ctx.fillRect(54, baseY-matH, barW, matH);
+
+    // mind
+    const mindH = Math.floor((m.mindScore / maxScore) * (h-56));
+    ctx.fillStyle = "rgba(255,62,62,0.20)";
+    ctx.fillRect(54+barW+gap, baseY-mindH, barW, mindH);
+
+    // coherence line
+    const cohY = baseY - Math.floor((m.coherence/100) * (h-56));
+    ctx.strokeStyle = "rgba(0,255,65,0.45)";
+    ctx.beginPath();
+    ctx.moveTo(24, cohY);
+    ctx.lineTo(w-14, cohY);
+    ctx.stroke();
+
+    // labels
+    ctx.fillStyle = "rgba(233,238,242,0.78)";
+    ctx.font = "12px Courier New";
+    ctx.fillText("material", 52, 20);
+    ctx.fillText("mind", 52+barW+gap, 20);
+
+    ctx.fillStyle = "rgba(0,255,65,0.78)";
+    ctx.fillText(`coherence=${m.coherence}`, 24, cohY-6);
+
+    // stats
+    ctx.fillStyle = "rgba(233,238,242,0.68)";
+    ctx.font = "11px Courier New";
+    ctx.fillText(`drift=${m.drift}`, 24, h-8);
+  }
+}
+
+/* =========================================================
+   AethelOS — State Machine
+   ========================================================= */
+class AethelOS{
+  constructor(){
+    // DOM
+    this.body = $("#content-body");
+    this.replyDock = $("#reply-options");
+    this.tagApp = $("#tag-app");
+    this.tagState = $("#tag-state");
+
+    // engines
+    this.vfx = new VFXEngine($("#vfx-canvas"), $("#glitch"));
+    this.audit = new ConsciousnessAudit();
+    this.dialog = new DialogEngine(this.body, this.replyDock, this.audit, {
+      onTypeChar: ()=> {
+        // micro-glitch chance while typing (low power intensifies)
+        if(ScriptDB.system.flags.lowPower && Math.random()<0.012){
+          this.triggerGlitch("typing");
+        }
+      }
+    });
+    this.chart = new MonitorChart($("#chart-canvas"));
+
+    // state
+    this.state = {
+      currentApp: "chat",
+      progressIdx: 0,      // points to ScriptDB.chat.inbox index
+      isLocked: false
+    };
+
+    // unlock registry
+    this.unlocked = new Set(["note_001","note_002","gallery_001","gallery_002","gallery_003"]); // can start generous or strict
+    // if you want gating from start, set only minimal:
+    // this.unlocked = new Set([]);
+
+    // init
+    this.bindEvents();
+    this.vfx.tick(performance.now());
+    this.runClock();
+    this.routeTo("chat", {silent:true});
+    this.logBoot();
+    this.renderMonitor();
+  }
+
+  logBoot(){
+    softLog([
+      `[BOOT] AETHEL OS started`,
+      `[BOOT] build=${ScriptDB.system.device.osVersion}`,
+      `[BOOT] lowPower=${ScriptDB.system.flags.lowPower}`,
+      `---`
+    ]);
+  }
+
+  runClock(){
+    const clock = $("#clock");
+    const battery = $("#battery");
+    const signal = $("#signal");
+    const tick = ()=>{
+      clock.textContent = nowHHMM();
+      // fake battery drift
+      const b = ScriptDB.system.flags.lowPower ? "1%" : "42%";
+      battery.textContent = b;
+      if(ScriptDB.system.flags.lowPower){
+        // degrade signal slightly
+        signal.textContent = (Math.random()<0.35) ? "[|||  ]" : "[|||| ]";
+      }
+      setTimeout(tick, 800);
+    };
+    tick();
+  }
+
+  bindEvents(){
+    // nav switch
+    $$(".app-icon").forEach(icon=>{
+      icon.addEventListener("click", ()=>{
+        const app = icon.dataset.app;
+        this.audit.bump("tap");
+        this.routeTo(app);
+      });
+    });
+
+    // scroll tracking
+    let lastScrollTop = 0;
+    this.body.addEventListener("scroll", ()=>{
+      const d = this.body.scrollTop - lastScrollTop;
+      lastScrollTop = this.body.scrollTop;
+      this.audit.addScroll(d);
+      // mild coherence effect through activity
+      if(Math.random()<0.05){
+        this.audit.applyDelta({material:0, mind:0});
+        this.renderMonitor();
+      }
+    });
+  }
+
+  routeTo(app, opts={}){
+    if(this.state.isLocked && app!=="system"){
+      this.toastLocked();
+      return;
+    }
+
+    if(app !== this.state.currentApp){
+      this.audit.bump("app");
+      this.audit.metrics.appSwitches++;
+    }
+
+    this.state.currentApp = app;
+    this.tagApp.textContent = `APP: ${app}`;
+    this.tagState.textContent = `STATE: ${this.state.isLocked ? "LOCKED" : "ACTIVE"}`;
+    this.tagState.className = "tag green";
+
+    // UI active highlight
+    $$(".app-icon").forEach(i=>i.classList.toggle("active", i.dataset.app===app));
+
+    if(app==="chat") this.renderChat(opts);
+    if(app==="notes") this.renderNotes(opts);
+    if(app==="gallery") this.renderGallery(opts);
+    if(app==="system") this.renderSystem(opts);
+
+    this.renderMonitor();
+  }
+
+  renderChat(opts={}){
+    if(!opts.silent) softLog(`[NAV] chat`);
+
+    this.dialog.clear();
+    const thread = this.dialog.ensureThread();
+
+    // render existing history
+    ScriptDB.chat.history.forEach(h=>{
+      const bubble = this.dialog.mkMessageBubble({
+        sender: h.sender,
+        text: h.renderedText || h.text,
+        mine: h.mine,
+        timeStr: h.timeStr,
+        img: h.img
+      });
+      bubble.tx.textContent = h.renderedText || h.text;
+      thread.appendChild(bubble.el);
+    });
+
+    // load next message
+    this.loadNextMessage();
+  }
+
+  async loadNextMessage(){
+    const idx = this.state.progressIdx;
+    const msg = ScriptDB.chat.inbox[idx];
+
+    if(!msg){
+      // end sequence
+      this.dialog.disableReplies();
+      this.triggerFinalSequence();
+      return;
+    }
+
+    // append lover message with typewriter
+    const thread = this.dialog.ensureThread();
+
+    const combined = msg.text + (msg.thriller ? ("\n\n" + msg.thriller) : "");
+    const bubble = this.dialog.mkMessageBubble({
+      sender: msg.sender,
+      mine:false,
+      img: msg.img
+    });
+    thread.appendChild(bubble.el);
+    this.dialog.scrollToBottom();
+
+    // Low power: occasional shake during thriller lines
+    const isLow = ScriptDB.system.flags.lowPower;
+
+    await this.dialog.typewriter(bubble.tx, combined, {minDelay: 10, maxDelay: isLow?26:20});
+    this.dialog.scrollToBottom();
+
+    // set replies
+    this.dialog.setReplies(msg.replies || [], (choice)=>{
+      this.handleChoice(choice);
+    });
+  }
+
+  async handleChoice(choice){
+    this.audit.bump("reply");
+    this.audit.metrics.repliesChosen++;
+
+    // disable old options
+    this.dialog.disableReplies();
+
+    // append "mine" bubble
+    const thread = this.dialog.ensureThread();
+    const bubble = this.dialog.mkMessageBubble({
+      sender:"Me",
+      mine:true
+    });
+    thread.appendChild(bubble.el);
+    this.dialog.scrollToBottom();
+
+    await this.dialog.typewriter(bubble.tx, choice.text, {minDelay: 6, maxDelay: 16});
+    this.dialog.scrollToBottom();
+
+    // apply score
+    this.audit.applyDelta(choice.val || {material:0, mind:0});
+
+    // unlock
+    (choice.unlock || []).forEach(u=>this.unlock(u));
+
+    // progress forward
+    this.state.progressIdx += 1;
+
+    // low power: respond glitch more often
+    if(ScriptDB.system.flags.lowPower && Math.random()<0.22){
+      this.triggerGlitch("lowpower_reply");
+      this.vibrate();
+    }
+
+    // write to history
+    ScriptDB.chat.history.push({
+      sender:"Lover",
+      text:"", // already rendered in DOM, but keep placeholder for future persistence
+      mine:false,
+      timeStr: nowHHMM()
+    });
+    ScriptDB.chat.history.push({
+      sender:"Me",
+      text: choice.text,
+      renderedText: choice.text,
+      mine:true,
+      timeStr: nowHHMM()
+    });
+
+    this.renderMonitor();
+    await sleep(240);
+    await this.loadNextMessage();
+  }
+
+  unlock(key){
+    if(!key) return;
+
+    if(key.startsWith("note_")){
+      this.unlocked.add(key);
+      this.markAppNew("notes");
+      softLog(`[UNLOCK] notes: ${key}`);
+      return;
+    }
+    if(key.startsWith("gallery_")){
+      this.unlocked.add(key);
+      this.markAppNew("gallery");
+      softLog(`[UNLOCK] gallery: ${key}`);
+      return;
+    }
+    if(key.startsWith("sys_flag_")){
+      // example: sys_flag_lowpower
+      if(key==="sys_flag_lowpower"){
+        ScriptDB.system.flags.lowPower = true;
+        softLog(`[FLAG] lowPower forced ON`);
+        this.triggerGlitch("flag_lowpower");
+        return;
+      }
+    }
+    // unknown keys may be used later
+    softLog(`[UNLOCK] ${key}`);
+  }
+
+  markAppNew(app){
+    const el = $(`.app-icon[data-app="${app}"]`);
+    if(el) el.classList.add("has-new");
+  }
+
+  clearAppNew(app){
+    const el = $(`.app-icon[data-app="${app}"]`);
+    if(el) el.classList.remove("has-new");
+  }
+
+  renderNotes(opts={}){
+    if(!opts.silent) softLog(`[NAV] notes`);
+    this.clearAppNew("notes");
+
+    // filter unlocked notes (if you want gating)
+    const notes = ScriptDB.notes.filter(n => this.unlocked.has(n.id) || this.unlocked.size===0);
+
+    renderNotesApp(this.body, notes, (noteId)=>{
+      this.audit.bump("note");
+      this.audit.metrics.notesOpened++;
+      this.audit.applyDelta({material:0, mind:2});
+      this.vibrate();
+      softLog(`[OPEN] note=${noteId}`);
+      this.renderMonitor();
+    });
+
+    this.replyDock.innerHTML = `<button class="btn" id="btn-back-chat">回到對話</button>`;
+    $("#btn-back-chat").addEventListener("click", ()=>{
+      this.audit.bump("tap");
+      this.routeTo("chat");
+    });
+  }
+
+  renderGallery(opts={}){
+    if(!opts.silent) softLog(`[NAV] gallery`);
+    this.clearAppNew("gallery");
+
+    const photos = ScriptDB.gallery.filter(p => this.unlocked.has(p.id) || this.unlocked.size===0);
+
+    renderGalleryApp(this.body, photos, (photoId)=>{
+      this.audit.bump("photo");
+      this.audit.metrics.photosOpened++;
+      this.audit.applyDelta({material:2, mind:1});
+      this.triggerGlitch("photo_open");
+      softLog(`[OPEN] photo=${photoId}`);
+      this.renderMonitor();
+    });
+
+    this.replyDock.innerHTML = `<button class="btn" id="btn-back-chat2">回到對話</button>`;
+    $("#btn-back-chat2").addEventListener("click", ()=>{
+      this.audit.bump("tap");
+      this.routeTo("chat");
+    });
+  }
+
+  renderSystem(opts={}){
+    if(!opts.silent) softLog(`[NAV] system`);
+    this.audit.bump("settings");
+    this.audit.metrics.settingsOpened++;
+
+    renderSystemApp(this.body, ScriptDB.system, this.audit);
+
+    this.replyDock.innerHTML = `
+      <button class="btn" id="btn-toggle-power">切換 Low Power</button>
+      <button class="btn" id="btn-glitch-now">強制 Glitch</button>
+      <button class="btn" id="btn-back-chat3">回到對話</button>
+    `;
+
+    $("#btn-toggle-power").addEventListener("click", ()=>{
+      this.audit.bump("tap");
+      ScriptDB.system.flags.lowPower = !ScriptDB.system.flags.lowPower;
+      softLog(`[SYS] lowPower=${ScriptDB.system.flags.lowPower}`);
+      this.vibrate();
+      this.triggerGlitch("toggle_power");
+      this.routeTo("system", {silent:true});
+    });
+
+    $("#btn-glitch-now").addEventListener("click", ()=>{
+      this.audit.bump("tap");
+      this.triggerGlitch("manual");
+      this.vibrate();
+    });
+
+    $("#btn-back-chat3").addEventListener("click", ()=>{
+      this.audit.bump("tap");
+      this.routeTo("chat");
+    });
+  }
+
+  renderMonitor(){
+    // monitor chart + log summary
+    this.chart.draw(this.audit);
+
+    // Also refresh system preview tags
+    this.tagApp.textContent = `APP: ${this.state.currentApp}`;
+    this.tagState.textContent = `STATE: ${this.state.isLocked ? "LOCKED" : "ACTIVE"}`;
+
+    // Occasionally dump audit snapshot
+    if(Math.random()<0.08){
+      softLog(`[AUDIT] coherence=${this.audit.metrics.coherence} drift=${this.audit.metrics.drift} anxiety=${this.audit.metrics.anxiety}`);
+    }
+  }
+
+  toastLocked(){
+    softLog(`[LOCK] device locked; only system app available`);
+    this.vibrate();
+    this.triggerGlitch("locked");
+  }
+
+  vibrate(){
+    // simulate vibration (shake phone-display)
+    const phone = $("#phone-display");
+    phone.classList.remove("shake");
+    void phone.offsetWidth;
+    phone.classList.add("shake");
+  }
+
+  triggerGlitch(reason){
+    // reason: string
+    const g = $("#glitch");
+    g.classList.remove("glitch-on");
+    void g.offsetWidth;
+    g.classList.add("glitch-on");
+    softLog(`[GLITCH] reason=${reason}`);
+  }
+
+  async triggerFinalSequence(){
+    // A minimal but expandable ending.
+    // You can extend into 200+ lines of staged animation.
+    softLog(`---`);
+    softLog(`[FINAL] entering forced material ending sequence`);
+
+    // Lock non-system apps
+    this.state.isLocked = true;
+    ScriptDB.system.flags.lockState = true;
+
+    // Clear replies and show a “system notice”
+    this.replyDock.innerHTML = "";
+    const thread = this.dialog.ensureThread();
+
+    const b1 = this.dialog.mkMessageBubble({
+      sender:"SYSTEM",
+      mine:false
+    });
+    thread.appendChild(b1.el);
+    await this.dialog.typewriter(b1.tx,
+      "低電量模式已持續 6 小時。\n\n系統偵測到：『可驗證現實』與『記憶版本』出現衝突。\n\n為維持裝置可用性，將優先載入：物理層（material）的穩定解。",
+      {minDelay: 10, maxDelay: 22}
+    );
+    this.dialog.scrollToBottom();
+
+    await sleep(280);
+    this.triggerGlitch("final_gate");
+    this.vibrate();
+
+    const b2 = this.dialog.mkMessageBubble({
+      sender:"SYSTEM",
+      mine:false
+    });
+    thread.appendChild(b2.el);
+    await this.dialog.typewriter(b2.tx,
+      "你將會看到：\n1) 少量可被證明的東西\n2) 大量不能被證明的缺口\n\n而缺口將被命名為『你』。",
+      {minDelay: 10, maxDelay: 24}
+    );
+    this.dialog.scrollToBottom();
+
+    // route to system automatically after ending
+    await sleep(450);
+    this.routeTo("system");
+  }
+}
+
+/* =========================================================
+   Boot
+   ========================================================= */
+const game = new AethelOS();
+</script>
+</body>
+</html>
